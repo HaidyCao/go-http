@@ -1,6 +1,8 @@
 package http
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"io"
 	"net"
 	"net/http"
@@ -10,9 +12,14 @@ import (
 // 	Url string
 // }
 
+type GoSSLConfig interface {
+	VerifyPeerCertificate(rawCerts []byte) error
+}
+
 type GoTcpDial struct {
-	Address string
-	dial    net.Conn
+	Address   string
+	SSLConfig GoSSLConfig
+	dial      net.Conn
 }
 
 type GoHttpTransport interface {
@@ -20,9 +27,16 @@ type GoHttpTransport interface {
 }
 
 type GoClient struct {
-	Transport GoHttpTransport
-	Method    string
-	Url       string
+	Transport   GoHttpTransport
+	Method      string
+	Url         string
+	ContentType string
+	Body        GoIoReader
+	body        io.Reader
+}
+
+type GoIoReader interface {
+	Read(buffer []byte) (int, error)
 }
 
 type GoResponse struct {
@@ -43,6 +57,34 @@ func GetGoTcpDial(address string) (*GoTcpDial, error) {
 	}, nil
 }
 
+func getVerifyPeerCertificateFunc(sslConfig GoSSLConfig) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+	if sslConfig == nil {
+		return nil
+	}
+	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+		for i := 0; i < len(rawCerts); i++ {
+			err := sslConfig.VerifyPeerCertificate(rawCerts[i])
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func updateDialToSSLTcpDial(tcpDial *GoTcpDial) (*GoTcpDial, error) {
+	originDial := tcpDial.dial
+
+	config := &tls.Config{
+		InsecureSkipVerify:    true,
+		VerifyPeerCertificate: getVerifyPeerCertificateFunc(tcpDial.SSLConfig),
+	}
+	return &GoTcpDial{
+		Address: tcpDial.Address,
+		dial:    tls.Client(originDial, config),
+	}, nil
+}
+
 // TODO tcp 协议升级
 
 // func getProxy(proxy GoProxy) *http.Pro
@@ -59,18 +101,26 @@ func getTransport(transport GoHttpTransport) *http.Transport {
 	}
 }
 
-func getClient(goClient GoClient) *http.Client {
+func getClient(goClient *GoClient) *http.Client {
 	return &http.Client{}
 }
 
-func Request(request GoClient) {
+func Request(request *GoClient) (*GoResponse, error) {
 	client := &http.Client{
 		Transport: getTransport(request.Transport),
 	}
 
-	if request.Method == "GET" {
-		_, _ = client.Get(request.Url)
-	} else if request.Method == "POST" {
+	httpRequest, err := http.NewRequest(request.Method, request.Url, nil)
 
+	if request.ContentType != "" {
+		httpRequest.Header.Set("Content-Type", request.ContentType)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	_, _ = client.Do(httpRequest)
+
+	return nil, nil
 }
