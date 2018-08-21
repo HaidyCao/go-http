@@ -3,6 +3,7 @@ package http
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -55,9 +56,20 @@ type GoIoReader interface {
 }
 
 type GoResponse struct {
-	StatueCode int64
-	Headers    map[string]string
-	Reader     io.Reader
+	StatueCode int
+	Response   *http.Response
+}
+
+func (resp *GoResponse) Read(buffer []byte) (int, error) {
+	if resp.Response.Body == nil {
+		return 0, errors.New("Reader is nil")
+	}
+
+	return resp.Response.Body.Read(buffer)
+}
+
+func (resp *GoResponse) getHeader() string {
+	return ""
 }
 
 func GetGoTcpDial(address string) (*GoTcpDial, error) {
@@ -142,7 +154,10 @@ func Request(request *GoClient) (*GoResponse, error) {
 		return nil, err
 	}
 
-	_, _ = client.Do(httpRequest)
+	response, _ := client.Do(httpRequest)
 
-	return nil, nil
+	return &GoResponse{
+		StatueCode: response.StatusCode,
+		Response:   response,
+	}, nil
 }
