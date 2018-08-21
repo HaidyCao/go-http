@@ -23,13 +23,8 @@ type GoTcpDial struct {
 	dial      net.Conn
 }
 
-type GoHttpTransport interface {
-	TcpDial() *GoTcpDial
-}
-
-type GoHeader struct {
-	Name  string
-	Value string
+type GoHttpTransport struct {
+	TcpDial *GoTcpDial
 }
 
 type GoHeaderReader interface {
@@ -38,7 +33,7 @@ type GoHeaderReader interface {
 }
 
 type GoClient struct {
-	Transport   GoHttpTransport
+	Transport   *GoHttpTransport
 	Method      string
 	Url         string
 	ContentType string
@@ -55,9 +50,36 @@ type GoIoReader interface {
 	Read(buffer []byte) (int, error)
 }
 
+// GoHeader
+
+type GoHeader struct {
+	Name  string
+	Count int
+	Value []string
+}
+
+func (h *GoHeader) GetHeader(index int) (string, error) {
+	if index >= h.Count {
+		return "", errors.New("out of range")
+	}
+	return h.Value[index], nil
+}
+
+// Go Response
+
 type GoResponse struct {
 	StatueCode int
 	Response   *http.Response
+}
+
+func (resp *GoResponse) GetHeader(name string) *GoHeader {
+	value := resp.Response.Header[name]
+
+	return &GoHeader{
+		Name:  name,
+		Count: len(value),
+		Value: value,
+	}
 }
 
 func (resp *GoResponse) Read(buffer []byte) (int, error) {
@@ -66,10 +88,6 @@ func (resp *GoResponse) Read(buffer []byte) (int, error) {
 	}
 
 	return resp.Response.Body.Read(buffer)
-}
-
-func (resp *GoResponse) getHeader() string {
-	return ""
 }
 
 func GetGoTcpDial(address string) (*GoTcpDial, error) {
@@ -99,7 +117,7 @@ func getVerifyPeerCertificateFunc(sslConfig GoSSLConfig) func(rawCerts [][]byte,
 	}
 }
 
-func updateDialToSSLTcpDial(tcpDial *GoTcpDial) (*GoTcpDial, error) {
+func UpdateDialToSSLTcpDial(tcpDial *GoTcpDial) (*GoTcpDial, error) {
 	originDial := tcpDial.dial
 
 	config := &tls.Config{
@@ -116,16 +134,19 @@ func updateDialToSSLTcpDial(tcpDial *GoTcpDial) (*GoTcpDial, error) {
 
 // func getProxy(proxy GoProxy) *http.Pro
 
-func getTransport(transport GoHttpTransport) *http.Transport {
-	return &http.Transport{
-		Dial: func(network string, addr string) (net.Conn, error) {
-			tcpDial := transport.TcpDial()
-			if tcpDial.Address != "" {
+func getTransport(transport *GoHttpTransport) http.RoundTripper {
+	if transport != nil {
+		return &http.Transport{
+			Dial: func(network string, addr string) (net.Conn, error) {
+				tcpDial := transport.TcpDial
+				if tcpDial.Address != "" {
+					return net.Dial("tcp", tcpDial.Address)
+				}
 				return net.Dial("tcp", tcpDial.Address)
-			}
-			return net.Dial("tcp", tcpDial.Address)
-		},
+			},
+		}
 	}
+	return http.DefaultTransport
 }
 
 func getClient(goClient *GoClient) *http.Client {
@@ -142,7 +163,10 @@ func Request(request *GoClient) (*GoResponse, error) {
 	if request.headers != nil {
 		for i := 0; i < len(request.headers); i++ {
 			header := request.headers[i]
-			httpRequest.Header.Add(header.Name, header.Value)
+
+			for j := 0; j < len(header.Value); j++ {
+				httpRequest.Header.Add(header.Name, header.Value[j])
+			}
 		}
 	}
 
@@ -154,7 +178,10 @@ func Request(request *GoClient) (*GoResponse, error) {
 		return nil, err
 	}
 
-	response, _ := client.Do(httpRequest)
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		return nil, err
+	}
 
 	return &GoResponse{
 		StatueCode: response.StatusCode,
