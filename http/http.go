@@ -26,6 +26,16 @@ type GoHttpTransport interface {
 	TcpDial() *GoTcpDial
 }
 
+type GoHeader struct {
+	Name  string
+	Value string
+}
+
+type GoHeaderReader interface {
+	ReadHeader() *GoHeader
+	HasMore() bool
+}
+
 type GoClient struct {
 	Transport   GoHttpTransport
 	Method      string
@@ -33,6 +43,11 @@ type GoClient struct {
 	ContentType string
 	Body        GoIoReader
 	body        io.Reader
+	headers     []*GoHeader
+}
+
+func (c *GoClient) AddHeader(header *GoHeader) {
+	c.headers = append(c.headers, header)
 }
 
 type GoIoReader interface {
@@ -111,6 +126,13 @@ func Request(request *GoClient) (*GoResponse, error) {
 	}
 
 	httpRequest, err := http.NewRequest(request.Method, request.Url, nil)
+
+	if request.headers != nil {
+		for i := 0; i < len(request.headers); i++ {
+			header := request.headers[i]
+			httpRequest.Header.Add(header.Name, header.Value)
+		}
+	}
 
 	if request.ContentType != "" {
 		httpRequest.Header.Set("Content-Type", request.ContentType)
