@@ -33,8 +33,8 @@ type GoHeaderReader interface {
 }
 
 type GoClient struct {
-	Transport *GoHttpTransport
-
+	Transport   *GoHttpTransport
+	Jar         *GoCookieJar
 	Method      string
 	Url         string
 	ContentType string
@@ -64,31 +64,6 @@ func (h *GoHeader) GetHeader(index int) (string, error) {
 		return "", errors.New("out of range")
 	}
 	return h.Value[index], nil
-}
-
-// Go Response
-
-type GoResponse struct {
-	StatueCode int
-	Response   *http.Response
-}
-
-func (resp *GoResponse) GetHeader(name string) *GoHeader {
-	value := resp.Response.Header[name]
-
-	return &GoHeader{
-		Name:  name,
-		Count: len(value),
-		Value: value,
-	}
-}
-
-func (resp *GoResponse) Read(buffer []byte) (int, error) {
-	if resp.Response.Body == nil {
-		return 0, errors.New("Reader is nil")
-	}
-
-	return resp.Response.Body.Read(buffer)
 }
 
 func GetGoTcpDial(address string) (*GoTcpDial, error) {
@@ -146,6 +121,13 @@ func getTransport(transport *GoHttpTransport) http.RoundTripper {
 	return http.DefaultTransport
 }
 
+func getCookieJar(cookieJar *GoCookieJar) http.CookieJar {
+	if cookieJar != nil {
+		return cookieJar.Jar
+	}
+	return nil
+}
+
 func getClient(goClient *GoClient) *http.Client {
 	return &http.Client{}
 }
@@ -153,6 +135,7 @@ func getClient(goClient *GoClient) *http.Client {
 func Request(request *GoClient) (*GoResponse, error) {
 	client := &http.Client{
 		Transport: getTransport(request.Transport),
+		Jar:       getCookieJar(request.Jar),
 	}
 
 	httpRequest, err := http.NewRequest(request.Method, request.Url, nil)

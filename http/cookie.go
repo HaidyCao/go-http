@@ -30,19 +30,25 @@ func (cookie *GoCookie) AddUnparsed(unparsed string) {
 	cookie.Unparsed = append(cookie.Unparsed, unparsed)
 }
 
-func (cookie *GoCookie) GenHttpCookie() *http.Cookie {
+func (cookie *GoCookie) GenHttpCookie() (*http.Cookie, error) {
+	expires, err := time.Parse("2006-01-02 15:04:05", cookie.Expires)
+	if err != nil {
+		return nil, err
+	}
+
 	return &http.Cookie{
 		Name:       cookie.Name,
 		Value:      cookie.Value,
 		Path:       cookie.Path,
 		Domain:     cookie.Domain,
-		RawExpires: time.Parse("2006-01-02 15:04:05", cookie.RawExpires),
+		Expires:    expires,
+		RawExpires: cookie.RawExpires,
 		MaxAge:     cookie.MaxAge,
 		Secure:     cookie.Secure,
 		HttpOnly:   cookie.HttpOnly,
 		Raw:        cookie.Raw,
 		Unparsed:   cookie.Unparsed,
-	}
+	}, nil
 }
 
 type GoCookies struct {
@@ -64,12 +70,17 @@ func (jar *GoCookieJar) SetCookies(urlStr string, goCookies *GoCookies) error {
 	if err != nil {
 		return errors.New("url is illegal")
 	}
-	cookies := make([]http.Cookie, len(goCookies.cookies))
+	cookies := make([]*http.Cookie, len(goCookies.cookies))
 	for i := 0; i < len(cookies); i++ {
-		cookies[i] = goCookies.cookies[i].GenHttpCookie()
+		c, err := goCookies.cookies[i].GenHttpCookie()
+		if err != nil {
+			return err
+		}
+		cookies[i] = c
 	}
 
 	jar.Jar.SetCookies(url, cookies)
+	return nil
 }
 
 func (jar *GoCookieJar) Cookies(urlStr string) (*GoCookies, error) {
@@ -81,8 +92,19 @@ func (jar *GoCookieJar) Cookies(urlStr string) (*GoCookies, error) {
 	cookies := jar.Jar.Cookies(url)
 	goCookies := &GoCookies{}
 	for i := 0; i < len(cookies); i++ {
+		cookie := cookies[i]
 		goCookies.AppendCookie(&GoCookie{
-			// TODO
+			Name:       cookie.Name,
+			Value:      cookie.Value,
+			Path:       cookie.Path,
+			Domain:     cookie.Domain,
+			Expires:    cookie.Expires.Format("2006-01-02 15:04:05"),
+			RawExpires: cookie.RawExpires,
+			MaxAge:     cookie.MaxAge,
+			Secure:     cookie.Secure,
+			HttpOnly:   cookie.HttpOnly,
+			Raw:        cookie.Raw,
+			Unparsed:   cookie.Unparsed,
 		})
 	}
 	return goCookies, nil
