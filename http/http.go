@@ -33,7 +33,8 @@ type GoHeaderReader interface {
 }
 
 type GoClient struct {
-	Transport   *GoHttpTransport
+	Transport *GoHttpTransport
+
 	Method      string
 	Url         string
 	ContentType string
@@ -129,10 +130,6 @@ func UpdateDialToSSLTcpDial(tcpDial *GoTcpDial) (*GoTcpDial, error) {
 		dial:    tls.Client(originDial, config),
 	}, nil
 }
-
-// TODO tcp 协议升级
-
-// func getProxy(proxy GoProxy) *http.Pro
 
 func getTransport(transport *GoHttpTransport) http.RoundTripper {
 	if transport != nil {
