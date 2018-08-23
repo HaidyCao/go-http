@@ -1,12 +1,14 @@
 package http
 
 import (
-	"crypto/tls"
+	"bytes"
 	"crypto/x509"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+
+	ntlmssp "github.com/Azure/go-ntlmssp"
 )
 
 // type GoProxy struct {
@@ -17,14 +19,12 @@ type GoSSLConfig interface {
 	VerifyPeerCertificate(rawCerts []byte) error
 }
 
-type GoTcpDial struct {
-	Address   string
-	SSLConfig GoSSLConfig
-	dial      net.Conn
-}
-
 type GoHttpTransport struct {
-	TcpDial *GoTcpDial
+	TcpDial  *GoTcpDial
+	Ntlm     bool
+	Basic    bool
+	Username string
+	Password string
 }
 
 type GoHeaderReader interface {
@@ -38,17 +38,21 @@ type GoClient struct {
 	Method      string
 	Url         string
 	ContentType string
-	Body        GoIoReader
 	body        io.Reader
 	headers     []*GoHeader
+	PostData    []byte
 }
 
 func (c *GoClient) AddHeader(header *GoHeader) {
 	c.headers = append(c.headers, header)
 }
 
-type GoIoReader interface {
-	Read(buffer []byte) (int, error)
+func (c *GoClient) AddHeaderNameAndValue(name string, value string) {
+	header := &GoHeader{
+		Name:  name,
+		Value: append(make([]string, 0), value),
+	}
+	c.headers = append(c.headers, header)
 }
 
 // GoHeader
@@ -66,18 +70,6 @@ func (h *GoHeader) GetHeader(index int) (string, error) {
 	return h.Value[index], nil
 }
 
-func GetGoTcpDial(address string) (*GoTcpDial, error) {
-	dial, err := net.Dial("tcp", address)
-	if err != nil {
-		return nil, err
-	}
-
-	return &GoTcpDial{
-		Address: address,
-		dial:    dial,
-	}, nil
-}
-
 func getVerifyPeerCertificateFunc(sslConfig GoSSLConfig) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 	if sslConfig == nil {
 		return nil
@@ -93,22 +85,9 @@ func getVerifyPeerCertificateFunc(sslConfig GoSSLConfig) func(rawCerts [][]byte,
 	}
 }
 
-func UpdateDialToSSLTcpDial(tcpDial *GoTcpDial) (*GoTcpDial, error) {
-	originDial := tcpDial.dial
-
-	config := &tls.Config{
-		InsecureSkipVerify:    true,
-		VerifyPeerCertificate: getVerifyPeerCertificateFunc(tcpDial.SSLConfig),
-	}
-	return &GoTcpDial{
-		Address: tcpDial.Address,
-		dial:    tls.Client(originDial, config),
-	}, nil
-}
-
 func getTransport(transport *GoHttpTransport) http.RoundTripper {
 	if transport != nil {
-		return &http.Transport{
+		ret := &http.Transport{
 			Dial: func(network string, addr string) (net.Conn, error) {
 				tcpDial := transport.TcpDial
 				if tcpDial.Address != "" {
@@ -117,6 +96,13 @@ func getTransport(transport *GoHttpTransport) http.RoundTripper {
 				return net.Dial("tcp", tcpDial.Address)
 			},
 		}
+
+		if transport.Ntlm {
+			return ntlmssp.Negotiator{
+				RoundTripper: http.DefaultTransport,
+			}
+		}
+		return ret
 	}
 	return http.DefaultTransport
 }
@@ -138,7 +124,14 @@ func Request(request *GoClient) (*GoResponse, error) {
 		Jar:       getCookieJar(request.Jar),
 	}
 
-	httpRequest, err := http.NewRequest(request.Method, request.Url, nil)
+	var postData io.Reader
+	if request.PostData != nil {
+		postData = bytes.NewReader(request.PostData)
+	} else {
+		postData = nil
+	}
+
+	httpRequest, err := http.NewRequest(request.Method, request.Url, postData)
 
 	if request.headers != nil {
 		for i := 0; i < len(request.headers); i++ {
@@ -152,6 +145,16 @@ func Request(request *GoClient) (*GoResponse, error) {
 
 	if request.ContentType != "" {
 		httpRequest.Header.Set("Content-Type", request.ContentType)
+	}
+
+	if request.Transport != nil {
+		if request.Transport.Ntlm || request.Transport.Basic {
+			httpRequest.SetBasicAuth(request.Transport.Username, request.Transport.Password)
+		}
+	}
+
+	if request.PostData != nil {
+		request.body = bytes.NewReader(request.PostData)
 	}
 
 	if err != nil {

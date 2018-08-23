@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -45,14 +46,14 @@ func (resp *GoResponse) Read(buffer []byte) (int, error) {
 
 type GoBody struct {
 	Body io.ReadCloser
-	Byte []byte
+	data []byte
 	read bool
 }
 
 func newGoBody(body io.ReadCloser) GoBody {
 	return GoBody{
 		Body: body,
-		Byte: make([]byte, 0),
+		data: make([]byte, 0),
 		read: false,
 	}
 }
@@ -66,9 +67,15 @@ func ConvertToString(src string, srcCode string, tagCode string) string {
 	return result
 }
 
+func (body *GoBody) GetData() ([]byte, error) {
+	defer body.Body.Close()
+	b, err := ioutil.ReadAll(body.Body)
+	return b, err
+}
+
 func (body *GoBody) String(charset string) (string, error) {
 	if body.read {
-		ret := string(body.Byte)
+		ret := string(body.data)
 		if charset == "" || strings.EqualFold(charset, "utf-8") {
 			return ConvertToString(ret, charset, "utf-8"), nil
 		}
@@ -89,7 +96,7 @@ func (body *GoBody) String(charset string) (string, error) {
 		}
 	}
 
-	body.Byte = str
+	body.data = str
 	// dec := mahonia.NewDecoder("gbk")
 
 	return string(str), nil
