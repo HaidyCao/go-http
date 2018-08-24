@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"io"
@@ -21,6 +22,7 @@ type GoSSLConfig interface {
 
 type GoHttpTransport struct {
 	TcpDial  *GoTcpDial
+	TlsDial  *GoTcpDial
 	Ntlm     bool
 	Basic    bool
 	Username string
@@ -32,15 +34,28 @@ type GoHeaderReader interface {
 	HasMore() bool
 }
 
+// Go Client
 type GoClient struct {
-	Transport   *GoHttpTransport
-	Jar         *GoCookieJar
-	Method      string
-	Url         string
-	ContentType string
-	body        io.Reader
-	headers     []*GoHeader
-	PostData    []byte
+	Transport    *GoHttpTransport
+	Jar          *GoCookieJar
+	Method       string
+	Url          string
+	ContentType  string
+	body         io.Reader
+	headers      []*GoHeader
+	PostData     []byte
+	ConnTimeout  int
+	ReadTimeout  int
+	WriteTimeout int
+}
+
+func NewGoClient() *GoClient {
+
+	return &GoClient{
+		ConnTimeout:  30,
+		ReadTimeout:  30,
+		WriteTimeout: 30,
+	}
 }
 
 func (c *GoClient) AddHeader(header *GoHeader) {
@@ -90,16 +105,23 @@ func getTransport(transport *GoHttpTransport) http.RoundTripper {
 		ret := &http.Transport{
 			Dial: func(network string, addr string) (net.Conn, error) {
 				tcpDial := transport.TcpDial
-				if tcpDial.Address != "" {
-					return net.Dial("tcp", tcpDial.Address)
+				if tcpDial != nil {
+					return tcpDial.dial, nil
 				}
-				return net.Dial("tcp", tcpDial.Address)
+				return net.Dial(network, addr)
+			},
+			DialTLS: func(network, addr string) (net.Conn, error) {
+				tcpDial := transport.TlsDial
+				if tcpDial != nil {
+					return tcpDial.dial, nil
+				}
+				return tls.Dial(network, addr, nil)
 			},
 		}
 
 		if transport.Ntlm {
 			return ntlmssp.Negotiator{
-				RoundTripper: http.DefaultTransport,
+				RoundTripper: ret,
 			}
 		}
 		return ret

@@ -7,7 +7,7 @@ import (
 )
 
 type GoTcpDial struct {
-	Address   string
+	address   string
 	SSLConfig GoSSLConfig
 	dial      net.Conn
 }
@@ -20,7 +20,7 @@ func UpdateDialToSSLTcpDial(tcpDial *GoTcpDial) (*GoTcpDial, error) {
 		VerifyPeerCertificate: getVerifyPeerCertificateFunc(tcpDial.SSLConfig),
 	}
 	return &GoTcpDial{
-		Address: tcpDial.Address,
+		address: tcpDial.address,
 		dial:    tls.Client(originDial, config),
 	}, nil
 }
@@ -32,7 +32,7 @@ func GetGoTcpDial(address string) (*GoTcpDial, error) {
 	}
 
 	return &GoTcpDial{
-		Address: address,
+		address: address,
 		dial:    dial,
 	}, nil
 }
