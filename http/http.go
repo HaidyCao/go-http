@@ -1,13 +1,12 @@
 package http
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"io"
 	"net"
 	"net/http"
+	"time"
 
 	ntlmssp "github.com/Azure/go-ntlmssp"
 )
@@ -21,12 +20,22 @@ type GoSSLConfig interface {
 }
 
 type GoHttpTransport struct {
-	TcpDial  *GoTcpDial
-	TlsDial  *GoTcpDial
-	Ntlm     bool
-	Basic    bool
-	Username string
-	Password string
+	tcpCreater GoTcpDialCreater
+	tcpDial    *GoTcpDial
+	tlsCreater GoTcpDialCreater
+	tlsDial    *GoTcpDial
+	Ntlm       bool
+	Basic      bool
+	Username   string
+	Password   string
+}
+
+func (transport *GoHttpTransport) SetTlsCreater(creater GoTcpDialCreater) {
+	transport.tlsCreater = creater
+}
+
+func (transport *GoHttpTransport) SetTcpCreater(creater GoTcpDialCreater) {
+	transport.tcpCreater = creater
 }
 
 type GoHeaderReader interface {
@@ -36,38 +45,15 @@ type GoHeaderReader interface {
 
 // Go Client
 type GoClient struct {
-	Transport    *GoHttpTransport
-	Jar          *GoCookieJar
-	Method       string
-	Url          string
-	ContentType  string
-	body         io.Reader
-	headers      []*GoHeader
-	PostData     []byte
-	ConnTimeout  int
-	ReadTimeout  int
-	WriteTimeout int
+	Transport *GoHttpTransport
+	Jar       *GoCookieJar
+	Timeout   int
 }
 
 func NewGoClient() *GoClient {
-
 	return &GoClient{
-		ConnTimeout:  30,
-		ReadTimeout:  30,
-		WriteTimeout: 30,
+		Timeout: 0,
 	}
-}
-
-func (c *GoClient) AddHeader(header *GoHeader) {
-	c.headers = append(c.headers, header)
-}
-
-func (c *GoClient) AddHeaderNameAndValue(name string, value string) {
-	header := &GoHeader{
-		Name:  name,
-		Value: append(make([]string, 0), value),
-	}
-	c.headers = append(c.headers, header)
 }
 
 // GoHeader
@@ -104,18 +90,29 @@ func getTransport(transport *GoHttpTransport) http.RoundTripper {
 	if transport != nil {
 		ret := &http.Transport{
 			Dial: func(network string, addr string) (net.Conn, error) {
-				tcpDial := transport.TcpDial
+				tcpDial, err := transport.tcpCreater.CreateGoDial(addr)
+				if err != nil {
+					return nil, err
+				}
 				if tcpDial != nil {
 					return tcpDial.dial, nil
 				}
-				return net.Dial(network, addr)
+
+				dial, err := net.Dial(network, addr)
+
+				return dial, err
 			},
 			DialTLS: func(network, addr string) (net.Conn, error) {
-				tcpDial := transport.TlsDial
+				tcpDial, err := transport.tlsCreater.CreateGoDial(addr)
+				if err != nil {
+					return nil, err
+				}
 				if tcpDial != nil {
 					return tcpDial.dial, nil
 				}
-				return tls.Dial(network, addr, nil)
+				dial, err := tls.Dial(network, addr, nil)
+
+				return dial, err
 			},
 		}
 
@@ -140,20 +137,14 @@ func getClient(goClient *GoClient) *http.Client {
 	return &http.Client{}
 }
 
-func Request(request *GoClient) (*GoResponse, error) {
+func Request(goClient *GoClient, request *GoRequest) (*GoResponse, error) {
 	client := &http.Client{
-		Transport: getTransport(request.Transport),
-		Jar:       getCookieJar(request.Jar),
+		Transport: getTransport(goClient.Transport),
+		Jar:       getCookieJar(goClient.Jar),
+		Timeout:   time.Duration(goClient.Timeout) * time.Second,
 	}
 
-	var postData io.Reader
-	if request.PostData != nil {
-		postData = bytes.NewReader(request.PostData)
-	} else {
-		postData = nil
-	}
-
-	httpRequest, err := http.NewRequest(request.Method, request.Url, postData)
+	httpRequest, err := http.NewRequest(request.Method, request.Url, request.postData)
 
 	if request.headers != nil {
 		for i := 0; i < len(request.headers); i++ {
@@ -169,14 +160,10 @@ func Request(request *GoClient) (*GoResponse, error) {
 		httpRequest.Header.Set("Content-Type", request.ContentType)
 	}
 
-	if request.Transport != nil {
-		if request.Transport.Ntlm || request.Transport.Basic {
-			httpRequest.SetBasicAuth(request.Transport.Username, request.Transport.Password)
+	if goClient.Transport != nil {
+		if goClient.Transport.Ntlm || goClient.Transport.Basic {
+			httpRequest.SetBasicAuth(goClient.Transport.Username, goClient.Transport.Password)
 		}
-	}
-
-	if request.PostData != nil {
-		request.body = bytes.NewReader(request.PostData)
 	}
 
 	if err != nil {
