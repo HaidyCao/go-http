@@ -90,6 +90,9 @@ func getTransport(transport *GoHttpTransport) http.RoundTripper {
 	if transport != nil {
 		ret := &http.Transport{
 			Dial: func(network string, addr string) (net.Conn, error) {
+				if transport.tcpCreater == nil {
+					return net.Dial(network, addr)
+				}
 				tcpDial, err := transport.tcpCreater.CreateGoDial(addr)
 				if err != nil {
 					return nil, err
@@ -103,6 +106,9 @@ func getTransport(transport *GoHttpTransport) http.RoundTripper {
 				return dial, err
 			},
 			DialTLS: func(network, addr string) (net.Conn, error) {
+				if transport.tlsCreater == nil {
+					return tls.Dial(network, addr, nil)
+				}
 				tcpDial, err := transport.tlsCreater.CreateGoDial(addr)
 				if err != nil {
 					return nil, err
