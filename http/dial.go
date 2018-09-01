@@ -17,6 +17,12 @@ type GoTcpDial struct {
 	dial      net.Conn
 }
 
+func InitGoDialFromDial(dial net.Conn) *GoTcpDial {
+	return &GoTcpDial{
+		dial: dial,
+	}
+}
+
 func UpdateDialToSSLTcpDial(tcpDial *GoTcpDial) (*GoTcpDial, error) {
 	originDial := tcpDial.dial
 
@@ -32,6 +38,18 @@ func UpdateDialToSSLTcpDial(tcpDial *GoTcpDial) (*GoTcpDial, error) {
 
 func GetGoTcpDial(address string) (*GoTcpDial, error) {
 	dial, err := net.Dial("tcp", address)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GoTcpDial{
+		address: address,
+		dial:    dial,
+	}, nil
+}
+
+func GetGoTcpTlsDial(address string) (*GoTcpDial, error) {
+	dial, err := tls.Dial("tcp", address, nil)
 	if err != nil {
 		return nil, err
 	}
