@@ -67,18 +67,21 @@ func ConvertToString(src string, srcCode string, tagCode string) string {
 }
 
 func (body *GoBody) GetData() ([]byte, error) {
-
-	defer body.Body.Close()
 	b, err := ioutil.ReadAll(body.Body)
-
 	return b, err
 }
 
 func (body *GoBody) String() (string, error) {
 	data, err := body.GetData()
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	return string(data), nil
+}
+
+func (body *GoBody) Close() {
+	if body.Body != nil {
+		body.Body.Close()
+	}
 }
