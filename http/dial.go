@@ -48,6 +48,19 @@ func GetGoTcpDial(address string) (*GoTcpDial, error) {
 	}, nil
 }
 
+// GetGoTCPTLSDialUseConfig 使用config获取tls dial
+func GetGoTCPTLSDialUseConfig(address string, config *tls.Config) (*GoTcpDial, error) {
+	dial, err := tls.Dial("tcp", address, config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GoTcpDial{
+		address: address,
+		dial:    dial,
+	}, nil
+}
+
 func GetGoTcpTlsDial(address string) (*GoTcpDial, error) {
 	dial, err := tls.Dial("tcp", address, nil)
 	if err != nil {
