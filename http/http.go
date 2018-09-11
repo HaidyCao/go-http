@@ -7,8 +7,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"reflect"
-	"syscall"
 	"time"
 
 	ntlmssp "github.com/Azure/go-ntlmssp"
@@ -92,14 +90,6 @@ func getVerifyPeerCertificateFunc(sslConfig GoSSLConfig) func(rawCerts [][]byte,
 		}
 		return nil
 	}
-}
-
-// SilenceSIGPIPE configures the net.Conn in a way that silences SIGPIPEs with
-// the SO_NOSIGPIPE socket option.
-func SilenceSIGPIPE(c net.Conn) error {
-	// use reflection until https://github.com/golang/go/issues/9661 is fixed
-	fd := int(reflect.ValueOf(c).Elem().FieldByName("fd").Elem().FieldByName("sysfd").Int())
-	return syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_NOSIGPIPE, 1)
 }
 
 // NoSIGPIPEDialer returns a dialer that won't SIGPIPE should a connection
