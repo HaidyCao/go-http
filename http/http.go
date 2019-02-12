@@ -5,11 +5,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"time"
 
 	ntlmssp "github.com/Azure/go-ntlmssp"
+	"github.com/HaidyCao/go-http/http/post"
 )
 
 // type GoProxy struct {
@@ -62,8 +64,7 @@ func NewGoClient() *GoClient {
 	}
 }
 
-// GoHeader
-
+// GoHeader header
 type GoHeader struct {
 	Name  string
 	Count int
@@ -75,6 +76,11 @@ func (h *GoHeader) GetHeader(index int) (string, error) {
 		return "", errors.New("out of range")
 	}
 	return h.Value[index], nil
+}
+
+// GoResetReader GoResetReader
+type GoResetReader interface {
+	post.GoResetReader
 }
 
 func getVerifyPeerCertificateFunc(sslConfig GoSSLConfig) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
@@ -187,7 +193,30 @@ func Request(goClient *GoClient, request *GoRequest) (*GoResponse, error) {
 		Timeout:   time.Duration(goClient.Timeout) * time.Second,
 	}
 
-	httpRequest, err := http.NewRequest(request.Method, request.Url, request.postData)
+	postStream := request.postData
+	var body io.Reader
+	if postStream != nil {
+		body = postStream.GetReader()
+	}
+
+	var httpRequest *http.Request
+	var err error
+	if httpRequest, err = http.NewRequest(request.Method, request.Url, body); err != nil {
+		return nil, err
+	}
+
+	if postStream != nil && postStream.IsCustomReader() {
+		httpRequest.ContentLength = postStream.ContentLength
+		httpRequest.Body = postStream
+		cp := *postStream
+
+		httpRequest.GetBody = func() (io.ReadCloser, error) {
+			if err := cp.Reset(); err != nil {
+				return nil, err
+			}
+			return &cp, nil
+		}
+	}
 
 	if request.headers != nil {
 		for i := 0; i < len(request.headers); i++ {
@@ -212,7 +241,6 @@ func Request(goClient *GoClient, request *GoRequest) (*GoResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	response, err := client.Do(httpRequest)
 	if err != nil {
 		return nil, err

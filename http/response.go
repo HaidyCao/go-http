@@ -80,8 +80,9 @@ func (body *GoBody) String() (string, error) {
 	return string(data), nil
 }
 
-func (body *GoBody) Close() {
+func (body *GoBody) Close() error {
 	if body.Body != nil {
-		body.Body.Close()
+		return body.Body.Close()
 	}
+	return nil
 }

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"io"
 	"strings"
+
+	"github.com/HaidyCao/go-http/http/post"
 )
 
 type GoRequest struct {
 	Method      string
 	Url         string
-	postData    io.Reader
+	postData    *post.GoPostStream
 	ContentType string
 	body        io.Reader
 	headers     []*GoHeader
@@ -35,15 +37,19 @@ func NewRequest(url string) *GoRequest {
 }
 
 func (req *GoRequest) RequestBodyBytes(data []byte) {
-	req.postData = bytes.NewReader(data)
+	req.postData = post.NewReaderPostStream(bytes.NewReader(data))
 	if req.Method == "" {
 		req.Method = "POST"
 	}
 }
 
 func (req *GoRequest) RequestBodyString(data string) {
-	req.postData = strings.NewReader(data)
+	req.postData = post.NewReaderPostStream(strings.NewReader(data))
 	if req.Method == "" {
 		req.Method = "POST"
 	}
+}
+
+func (req *GoRequest) RequestPostStream(stream *post.GoPostStream) {
+	req.postData = stream
 }
